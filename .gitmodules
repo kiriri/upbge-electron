@@ -1,0 +1,3 @@
+[submodule "upbge-master/upbge"]
+	path = upbge-master/upbge
+	url = https://github.com/kiriri/upbge.git
