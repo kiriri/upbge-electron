@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Hello World!</title>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval';" />
+	<link rel="stylesheet" href="src/style.css">
+    <script src="src/main_renderer.mjs" type="module"></script>
+</head>
+<body style="background:black">
+	<canvas id="canvas" style="transform:scaleY(-1)"></canvas>
+	<div style="position:absolute;left:6px;top:8px;background:gray;color:white;">
+		<span>FPS : </span>
+		<span id="fps">0</span><br/>
+		<button id="resize">Resize</button><br/>
+		<input type="color" id="color" name="color"value="#e66465">
+	</div>
+	<!-- <video autoplay loop><source src="../src/render00001-0015.mp4" type='video/mp4'></video> -->
+			
+    We are using node <script>document.write(process.versions.node)</script>,
+    Chrome <script>document.write(process.versions.chrome)</script>,
+    and Electron <script>document.write(process.versions.electron)</script>.
+</body>
+</html>
