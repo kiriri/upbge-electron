@@ -2,7 +2,8 @@
 .vscode
 assets
 __pycache__
-upbge-master
+upbge-master/build_linux
+upbge-master/lib
 
 
 # Logs

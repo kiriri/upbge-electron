@@ -69,6 +69,7 @@ class Server(object):
 				
 		#print("|init|"+socket + str(self.port),flush=True)
 
+	# API : Render the next frame
 	def next_frame(self,params):
 		start = time.time_ns()
 		bge.logic.NextFrame()
@@ -77,13 +78,14 @@ class Server(object):
 		#os.fsync(3)
 		print('Rendered next frame ' + str((time.time_ns() - start)/1000000),flush=True)
 
+	# API : Quit the game
 	def quit(self,params):
 		try:
 			bge.logic.endGame()
 		except Exception as e:
 			print(e,flush=True)
 		
-
+	# API : Set render resolution
 	def set_resolution(self,params):
 		
 
@@ -113,6 +115,7 @@ class Server(object):
 		
 		print("change",flush=True)
 
+	# API : Write the render to an mmap and return the width/height directly. 
 	def fetch_image(self,params):
 		start = time.time_ns()
 		self.update_texture()
@@ -130,7 +133,7 @@ class Server(object):
 			print(e,flush=True)
 		print('Updated texture2 ' + str((time.time_ns() - start)/1000000),flush=True)
 	
-
+	# Fetch the final render from gpu and store as bytearray under self.pixels
 	def update_texture(self):
 		if self.viewport_texture == None:
 			return
@@ -140,6 +143,7 @@ class Server(object):
 		except Exception as e:
 			print(e,flush=True)
 		
+	# API : A demo function for changing the emission color in the demo main.blend
 	def set_light_color(self,params):
 		bpy.data.materials["GlowingCube"].node_tree.nodes["Emission"].inputs[0].default_value = (params[0],params[1],params[2], 1)
 		os.write(3, (0).to_bytes(4, byteorder='little'))
@@ -164,14 +168,6 @@ class Server(object):
 			except Exception as e:
 				print(e,flush=True)
 			#print("Processin " + str(message['method']) + " " + str((time.time_ns() - start)/1000000) + "\n",flush=True)
-
-
-	def exit_gracefully(self,params):
-		print('EXIT')
-		self.socket.close()
-		print('Closed Blender Server')
-		bge.logic.endGame()
-	
 
 
 	
