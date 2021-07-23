@@ -37,18 +37,18 @@ import mmap
 class Server(object):
 	def __init__(self):
 		#self.changed = False
-		self.pixels = bytearray(1920*1080*4)#bytearray([])
 		self.process = None
 		#self.port = 9999
 		self.viewport_texture = None
 
 		self.fd3 = os.fdopen(3,'w')
 
-		self.image_file = open('/dev/shm/test', "wb+")
-		self.image_file.write(self.pixels)
-		self.image_file.flush()
-		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4,prot=mmap.PROT_WRITE)
-		self.image_file_size = len(self.pixels)
+		self.image_file = open('/dev/shm/test', "rb+")
+		self.image_file_size = os.fstat(self.image_file.fileno()).st_size
+		print(str(self.image_file_size),flush=True)
+		#self.image_file.write(bytearray(1920*1080*4))
+		#self.image_file.flush()
+		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4,flags=mmap.MAP_SHARED,prot=mmap.PROT_WRITE)
 
 
 		#socket = "tcp://127.0.0.1:"
@@ -93,9 +93,12 @@ class Server(object):
 		bge.render.setWindowSize(params[0], params[1])
 		bpy.context.scene.game_settings.resolution_x = params[0]
 		bpy.context.scene.game_settings.resolution_y = params[1]
-		self.pixels = bytearray(params[0] * params[1] * 4)
 
-		self.image_mmap.resize(len(self.pixels)) # TODO : Does this resize the file as well?
+		#self.image_mmap.resize(params[0] * params[1] * 4) # TODO : Does this resize the file as well?
+		if(params[0] * params[1] * 4 > self.image_file_size):
+			self.image_file.write(bytearray(params[0] * params[1] * 4))
+			self.image_file.flush()
+		self.image_mmap = mmap.mmap(self.image_file.fileno(),params[0] * params[1] * 4,flags=mmap.MAP_SHARED,prot=mmap.PROT_WRITE)
 
 		print('Loading image',flush=True)
 
@@ -123,8 +126,6 @@ class Server(object):
 		viewport_texture = self.viewport_texture
 		
 		try:
-			self.image_mmap.seek(0)
-			self.image_mmap.write(self.pixels)
 			os.write(3, (4).to_bytes(4, byteorder='little'))
 			os.write(3, viewport_texture.size[0].to_bytes(2, byteorder='little'))
 			os.write(3, viewport_texture.size[1].to_bytes(2, byteorder='little'))
@@ -133,13 +134,13 @@ class Server(object):
 			print(e,flush=True)
 		print('Updated texture2 ' + str((time.time_ns() - start)/1000000),flush=True)
 	
-	# Fetch the final render from gpu and store as bytearray under self.pixels
+	# Fetch the final render from gpu and store as bytearray under self.image_mmap
 	def update_texture(self):
 		if self.viewport_texture == None:
 			return
 
 		try:
-			self.viewport_texture.refresh(self.pixels,'RGBA') # Defined in /home/sven/Desktop/hobby_projects/upbge_cultivation/upbge-master/upbge/source/gameengine/VideoTexture/ImageBase.cpp unde Image_Refresh
+			self.viewport_texture.refresh(self.image_mmap,'RGBA') # Defined in /home/sven/Desktop/hobby_projects/upbge_cultivation/upbge-master/upbge/source/gameengine/VideoTexture/ImageBase.cpp unde Image_Refresh
 		except Exception as e:
 			print(e,flush=True)
 		

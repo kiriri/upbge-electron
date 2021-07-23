@@ -65,25 +65,25 @@ let remaining_message = 0; // if other than 0, then the current message continue
 
 let max_result_length = MAX_DATA;
 
+
 let image_mmap = fs.openSync('/dev/shm/test','r+');
-let prot = mmap.PROT_READ
+fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
+//fs.fstat(image_mmap,(err,stats)=>console.log("Wrote",stats.size))
+let prot = mmap.PROT_WRITE | mmap.PROT_READ
 let priv = mmap.MAP_SHARED
 //let shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap) // not worth figuring out if bottleneck is 100% py
 
-
-
 let shared_buffer = new ArrayBuffer(max_result_length) // this is the underlying data in ram. You can define TypedArrays as views on it, and avoid allocating it again and again.
-let shared_image_buffer = new ArrayBuffer(max_result_length) 
+//let shared_image_buffer = new ArrayBuffer(max_result_length) 
+//console.log(mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer)
+let shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer
 let shared_buffer_view = new Uint8ClampedArray(shared_buffer) // max data 
 let shared_image_buffer_view = new Uint8ClampedArray(shared_image_buffer)
-
 
 let _buffer_i = 0; // byte offset in shared_buffer. try to keep messages in memory for as long as possible by cycling through the buffer.
 function process_message(chunk)
 {
-	
 	let chunk_length = chunk.length;
-
 	
 	let chunk_offset = 0;
 	// Iterate through all messages in the chunk. Piping strings together several messages into one chunk if they get created soon after one another
@@ -100,7 +100,6 @@ function process_message(chunk)
 		remaining_message -= message_length_in_chunk;
 		chunk_offset += message_length_in_chunk;
 
-
 		// Full message has been read, trigger callback
 		if(remaining_message <= 0)
 		{
@@ -110,7 +109,6 @@ function process_message(chunk)
 			}
 		}
 	}
-
 }
 
 blender_process.stdio[3].on('data', function (chunk) 
@@ -270,10 +268,13 @@ async function update_resolution(new_width,new_height,force=false)
 
 	// If buffer too small, create new one.
 	if(shared_image_buffer.byteLength < resolution[0] * resolution[1] * 4)
-		shared_image_buffer = new ArrayBuffer(resolution[0] * resolution[1] * 4)
-	
+	{
+		//fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
+		//shared_image_buffer = new ArrayBuffer(resolution[0] * resolution[1] * 4)
+		shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer
+	}
 	// Resize view
-	shared_image_buffer_view = new Uint8ClampedArray(shared_image_buffer,0,resolution[0] * resolution[1] * 4);
+	shared_image_buffer_view = new Uint8ClampedArray(shared_image_buffer,0,new_width * new_height * 4);
 	image = new ImageData(shared_image_buffer_view, new_width, new_height);
 }
 
@@ -298,13 +299,9 @@ async function updateImage()
 	remote_command('next_frame', [])
 	fetch_image_request = remote_command('fetch_image', []);
 	
-	// fetching the image should always be faster than calculating the next frame and writing it to the file in python. So we're not even gonna check for race conditions. If they ever become an issue, we can work with 2 files instead, and swap between them
-	fs.read(image_mmap,shared_image_buffer_view,0,shared_image_buffer_view.length,0
-	,(err,bytesRead,buff)=>
-	{
-		set_image()
-	})
-
+	// At this point the next frame should not have finished rendering yet. Use the time to render the old frame to canvas. This should finish before the new frame is rendered and fetched from gpu
+	set_image()
+	
 	console.log(performance.now() - start , 'is what js takes')
 }
 
