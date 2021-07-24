@@ -1,5 +1,3 @@
-from numpy.lib.format import open_memmap
-from zmq.sugar.constants import NOBLOCK
 import os
 import json
 import bge
