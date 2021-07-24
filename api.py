@@ -39,7 +39,7 @@ class Server(object):
 		print(str(self.image_file_size),flush=True)
 		#self.image_file.write(bytearray(1920*1080*4))
 		#self.image_file.flush()
-		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4,flags=mmap.MAP_SHARED,prot=mmap.PROT_WRITE)
+		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4,prot=mmap.PROT_WRITE)
 
 
 		#socket = "tcp://127.0.0.1:"
