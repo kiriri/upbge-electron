@@ -90,7 +90,7 @@ class Server(object):
 		if(params[0] * params[1] * 4 > self.image_file_size):
 			self.image_file.write(bytearray(params[0] * params[1] * 4))
 			self.image_file.flush()
-		self.image_mmap = mmap.mmap(self.image_file.fileno(),params[0] * params[1] * 4,flags=mmap.MAP_SHARED,prot=mmap.PROT_WRITE)
+		self.image_mmap = mmap.mmap(self.image_file.fileno(),params[0] * params[1] * 4)
 
 		print('Loading image',flush=True)
 
