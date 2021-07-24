@@ -8,6 +8,8 @@ import time
 #from queue import Queue, Empty
 from threading  import Thread
 import mmap
+import tempfile
+import platform
 
 # if(platform.system() == 'Windows'):
 # 	import msvcrt
@@ -18,6 +20,8 @@ import mmap
 # 	fl = fcntl.fcntl(3, fcntl.F_GETFL)
 # 	fl |= os.O_SYNC
 # 	fcntl.fcntl(3, fcntl.F_SETFL, fl)
+
+tempdir = tempfile.gettempdir() + '\\' if platform.system() == 'Windows' else '/dev/shm/' 
 
 
 
@@ -30,7 +34,7 @@ class Server(object):
 
 		self.fd3 = os.fdopen(3,'w')
 
-		self.image_file = open('/dev/shm/test', "rb+")
+		self.image_file = open(tempdir + 'test', "rb+")
 		self.image_file_size = os.fstat(self.image_file.fileno()).st_size
 		print(str(self.image_file_size),flush=True)
 		#self.image_file.write(bytearray(1920*1080*4))
