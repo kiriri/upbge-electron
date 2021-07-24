@@ -5,7 +5,6 @@ import fs
 #import json
 import bpy
 import time
-from os import O_NONBLOCK, read
 #from queue import Queue, Empty
 from threading  import Thread
 import mmap
