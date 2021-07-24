@@ -14,7 +14,10 @@ var resolution = [1920, 1080]
 const MAX_DATA = 4*1920*1080 * 4 + 32; // initial max data passed between python and nodejs. Currently at least 1 4k image + 32 bytes for some variables
 
 const platform = os.platform();
-const temp_path = platform == 'win32' | platform == 'win64' ? os.tmpdir() : '/dev/shm' ;
+const is_win = platform == 'win32' | platform == 'win64';
+const temp_path = is_win  ? os.tmpdir() + '\\' : '/dev/shm/' ;
+
+const blenderplayer_path = is_win ? '..\\upbge-master\\build_windows_x64_vc16_Release\\bin\\Release\\blenderplayer' : '../upbge-master/build_linux/bin/blenderplayer';
 
 console.log('Entered Main renderer',temp_path)
 
@@ -71,7 +74,7 @@ let remaining_message = 0; // if other than 0, then the current message continue
 let max_result_length = MAX_DATA;
 
 
-let image_mmap = fs.openSync(temp_path+'/test','r+');
+let image_mmap = fs.openSync(temp_path+'test.txt','w+');
 fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
 //fs.fstat(image_mmap,(err,stats)=>console.log("Wrote",stats.size))
 let prot = mmap.PROT_WRITE | mmap.PROT_READ
