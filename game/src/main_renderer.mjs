@@ -5,13 +5,18 @@ const { BrowserWindow, process } = remote
 const stream = require('stream');
 const $ = require('jquery');
 const { spawn, exec } = require("child_process");
+const os = require('os');
 
-const mmap = require("mmap-io")
+const mmap = require("mmap-io");
+const { resolve } = require('path');
 var resolution = [1920, 1080]
 
 const MAX_DATA = 4*1920*1080 * 4 + 32; // initial max data passed between python and nodejs. Currently at least 1 4k image + 32 bytes for some variables
 
-console.log('Entered Main renderer')
+const platform = os.platform();
+const temp_path = platform == 'win32' | platform == 'win64' ? os.tmpdir() : '/dev/shm' ;
+
+console.log('Entered Main renderer',temp_path)
 
 // const app_path = remote.app.getAppPath();
 // let parent_dir_count = app_path.split("/").length - 1;
@@ -66,7 +71,7 @@ let remaining_message = 0; // if other than 0, then the current message continue
 let max_result_length = MAX_DATA;
 
 
-let image_mmap = fs.openSync('/dev/shm/test','r+');
+let image_mmap = fs.openSync(temp_path+'/test','r+');
 fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
 //fs.fstat(image_mmap,(err,stats)=>console.log("Wrote",stats.size))
 let prot = mmap.PROT_WRITE | mmap.PROT_READ
@@ -199,9 +204,10 @@ let image;
 /**
  * Render the image from the ImageData "image" variable to the canvas
  */
-async function set_image()
+function set_image()
 {
-	ctx.putImageData(image, 0, 0);
+	return new Promise((resolve) => {ctx.putImageData(image, 0, 0);resolve()});
+	
 }
 
 /**

@@ -4,18 +4,21 @@ When installing a new module, the local pip in the python folder needs to be use
 ./bin/pip3 install --target lib/python3.9 pyzmq
 
 
+// How to run blenderplayer from blender.exe :
+
 import bpy
 bpy.ops.wm.blenderplayer_start()
 
-// Headless is created by commenting out all instances of
+// Headless build is created by commenting out all instances of
 XMapWindow(... on Linux
 and 
 ??? on Windows
 
 // Efficient ImageViewport.refresh() is achieved by modifying
 /home/sven/Desktop/hobby_projects/upbge_cultivation/upbge-master/upbge/source/gameengine/VideoTexture/ImageViewport.cpp
-calcViewport()
-and replacing the last else with 
+// calcViewport()
+// and replacing the last else with 
+
 glReadPixels(m_upLeft[0],
        m_upLeft[1],
        (GLsizei)m_capSize[0],
@@ -26,3 +29,5 @@ glReadPixels(m_upLeft[0],
 m_avail = true;
 if (format == GL_BGRA) 
 	swapImageBR();
+
+// This will remove an expensive cpu bound iteration over all pixels
