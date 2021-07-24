@@ -58,7 +58,7 @@ const wait = ms => new Promise(res => remote.getGlobal('setTimeout')(res, ms));
 
 // }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
 
-let blender_process = spawn('../upbge-master/build_linux/bin/blenderplayer', ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
+let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
 // var fStream = fs.createReadStream('/foo/bar', { highWaterMark: 128 * 1024 });
 // blender_process.stdio[3].pipe(fStream);
 
