@@ -34,12 +34,13 @@ class Server(object):
 
 		self.fd3 = os.fdopen(3,'w')
 
-		self.image_file = open(tempdir + 'test', "rb+")
+		self.image_file = open(tempdir + 'test.txt', "rb+")
 		self.image_file_size = os.fstat(self.image_file.fileno()).st_size
 		print(str(self.image_file_size),flush=True)
 		#self.image_file.write(bytearray(1920*1080*4))
 		#self.image_file.flush()
-		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4,prot=mmap.PROT_WRITE)
+		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4,flags=2,prot=1) # 2 = mmap.MAP_SHARED , 1 = mmap.PROT_WRITE
+		#print(str(mmap.PROT_WRITE) + " " + str(mmap.MAP_SHARED)) 
 
 
 		#socket = "tcp://127.0.0.1:"
