@@ -5,7 +5,6 @@
 	"description": "",
 	"scripts": {
 		"start": "electron --enable-accelerated-mjpeg-decode --enable-accelerated-video --ignore-gpu-blacklist --enable-native-gpu-memory-buffers --enable-gpu-rasterization --enable-logging ./main",
-		"rebuild:zeromq": "cd node_modules/zeromq && npm run dev:build && node-gyp rebuild --target=6.0.12 --arch=ia32 --dist-url=https://electronjs.org/headers",
 		"rebuild-modules": "electron-rebuild"
 	},
 	"keywords": [],
