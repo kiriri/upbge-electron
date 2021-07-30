@@ -3,6 +3,8 @@
 
 `Forward UPBGE renders to Electron and control Blender from Electron (js)`
 
+![Electron UPBGE Demo](.github/upbge-electron-demo.gif?raw=true "UPBGE in Electron Window")
+
 Only works on Windows and X11  
 
 Requires an up-to-date version of Node.js and npm.
