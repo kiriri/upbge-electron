@@ -11,11 +11,12 @@ bpy.ops.wm.blenderplayer_start()
 
 // Headless build is created by commenting out all instances of
 XMapWindow(... on Linux
-and 
-??? on Windows
+and insert 
+::ShowWindow(m_hWnd, SW_HIDE); 
+after SetWindowPos calls in GHOST_WindowWin32.cpp on Windows
 
 // Efficient ImageViewport.refresh() is achieved by modifying
-/home/sven/Desktop/hobby_projects/upbge_cultivation/upbge-master/upbge/source/gameengine/VideoTexture/ImageViewport.cpp
+upbge-master/upbge/source/gameengine/VideoTexture/ImageViewport.cpp
 // calcViewport()
 // and replacing the last else with 
 

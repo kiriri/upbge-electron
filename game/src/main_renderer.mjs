@@ -17,7 +17,7 @@ const platform = os.platform();
 const is_win = platform == 'win32' | platform == 'win64';
 const temp_path = is_win  ? os.tmpdir() + '\\' : '/dev/shm/' ;
 
-const blenderplayer_path = is_win ? '..\\upbge-master\\build_windows_x64_vc16_Release\\bin\\Release\\blenderplayer' : '../upbge-master/build_linux/bin/blenderplayer';
+const blenderplayer_path = is_win ? "../upbge-master/build_windows_x64_vc16_Release/bin/Release/blenderplayer.exe" : '../upbge-master/build_linux/bin/blenderplayer';
 
 console.log('Entered Main renderer',temp_path)
 
@@ -58,7 +58,7 @@ const wait = ms => new Promise(res => remote.getGlobal('setTimeout')(res, ms));
 
 // }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
 
-let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
+let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] }).on('error', function( err ){ throw err }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
 // var fStream = fs.createReadStream('/foo/bar', { highWaterMark: 128 * 1024 });
 // blender_process.stdio[3].pipe(fStream);
 
@@ -74,7 +74,7 @@ let remaining_message = 0; // if other than 0, then the current message continue
 let max_result_length = MAX_DATA;
 
 
-let image_mmap = fs.openSync(temp_path+'test.txt','w+');
+let image_mmap = fs.openSync(temp_path+'test','w+');
 fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
 //fs.fstat(image_mmap,(err,stats)=>console.log("Wrote",stats.size))
 let prot = mmap.PROT_WRITE | mmap.PROT_READ
