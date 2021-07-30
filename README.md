@@ -32,7 +32,7 @@ Download a release package for ease of use. Then just enter the "game" folder an
 
 See setup_guide.txt for a list of changes that were made to upbge.
 
-To build from source, build upbge by following the normal Blender build instructions, then enter the "game" folder and run "npm i" to install dependencies. If there is an mmap error on Windows, remove the modified version of mmap that ships with this project and reinstall it from npm. On Linux, try running "npm run rebuild-modules" instead.
+To build from source, build upbge by following the normal Blender build instructions, then enter the "game" folder and run "npm i" to install dependencies. If there is an mmap error on Windows, remove the modified version of mmap that ships with this project and reinstall it from npm. On Linux, try running "npm run rebuild-modules" instead. If a python module is missing, copy it from the modified_python/python/lib folder.
 
 ## Possible future optimizations
 
