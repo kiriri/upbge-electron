@@ -1,34 +1,26 @@
-//const mmap = require('@raygun-nickj/mmap-io');
-const { remote, app} = require('electron');
+const { remote} = require('electron');
 const fs = require('fs');
-const { BrowserWindow, process } = remote
-const stream = require('stream');
 const $ = require('jquery');
-const { spawn, exec } = require("child_process");
+const { spawn } = require("child_process");
 const os = require('os');
-
 const mmap = require("mmap-io");
-const { resolve } = require('path');
-var resolution = [1920, 1080]
 
+var resolution = [1920, 1080]
 const MAX_DATA = 4*1920*1080 * 4 + 32; // initial max data passed between python and nodejs. Currently at least 1 4k image + 32 bytes for some variables
 
 const platform = os.platform();
 const is_win = platform == 'win32' | platform == 'win64';
 const temp_path = is_win  ? os.tmpdir() + '\\' : '/dev/shm/' ;
-
 const blenderplayer_path = is_win ? "../upbge-master/build_windows_x64_vc16_Release/bin/Release/blenderplayer.exe" : '../upbge-master/build_linux/bin/blenderplayer';
 
 console.log('Entered Main renderer',temp_path)
 
-// const app_path = remote.app.getAppPath();
-// let parent_dir_count = app_path.split("/").length - 1;
-// let path_to_system_root = "";
-// for (let i = 0; i < parent_dir_count; i++)
-// 	path_to_system_root += "../"
-// console.log("Root path is ", app_path);
-
-
+/**
+ * Convert a hex string into an array of numbers
+ * @param str Hex, either #xxx xxx #xxxxxx xxxxxx
+ * @param len how many characters combine into 1 number (=> bytes per channel)
+ * @returns 
+ */
 function hex_to_color(str,len= str.length < 6 ? 1 : 2) 
 {
 	let offset = str[0] == "#" ? 1 : 0;
@@ -40,30 +32,22 @@ function hex_to_color(str,len= str.length < 6 ? 1 : 2)
 	return result;
   }
 
-
-
 const wait = ms => new Promise(res => remote.getGlobal('setTimeout')(res, ms));
 
+const wait_for_image_load = img => new Promise((res, rej) =>
+{
+	img.onload = () => res();
+	img.onerror = rej;
 
+});
 
-// let cmd = '../upbge-master/build_linux/bin/blenderplayer ../main.blend';
-// let blender_process = exec(cmd, {encoding: 'binary', maxBuffer: 5000*1024})
-// exec(cmd, {encoding: 'binary', maxBuffer: 5000*1024}, function(error, stdout) {
-// 	//fs.writeFileSync('test2.jpg', stdout, 'binary');
-//   });
-
-//animation=True,write_still=True
-// let blender_process = exec('../upbge-master/build_linux/bin/blenderplayer ../main.blend',{encoding: 'binary', maxBuffer: 5000*1024,stdio:['pipe','pipe','pipe','pipe']},function(error, stdout) {
-// 	// 	//fs.writeFileSync('test2.jpg', stdout, 'binary');
-
-// }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
+const wait_for_animation_frame = () =>
+{
+	return new Promise((resolve) => window.requestAnimationFrame(resolve));
+}
 
 let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] }).on('error', function( err ){ throw err }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
-// var fStream = fs.createReadStream('/foo/bar', { highWaterMark: 128 * 1024 });
-// blender_process.stdio[3].pipe(fStream);
 
-//blender_process.stdin.setEncoding('utf-8');
-//remote.process.stdin.pipe(blender_process.stdin);
 /**
  * @type {((index:number,length:number)=>any)[]}
  */
@@ -73,22 +57,21 @@ let remaining_message = 0; // if other than 0, then the current message continue
 
 let max_result_length = MAX_DATA;
 
-
 let image_mmap = fs.openSync(temp_path+'test','w+');
 fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
-//fs.fstat(image_mmap,(err,stats)=>console.log("Wrote",stats.size))
-let prot = mmap.PROT_WRITE | mmap.PROT_READ
-let priv = mmap.MAP_SHARED
-//let shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap) // not worth figuring out if bottleneck is 100% py
-
+const prot = mmap.PROT_WRITE | mmap.PROT_READ
+const priv = mmap.MAP_SHARED
 let shared_buffer = new ArrayBuffer(max_result_length) // this is the underlying data in ram. You can define TypedArrays as views on it, and avoid allocating it again and again.
-//let shared_image_buffer = new ArrayBuffer(max_result_length) 
-//console.log(mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer)
 let shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer
 let shared_buffer_view = new Uint8ClampedArray(shared_buffer) // max data 
 let shared_image_buffer_view = new Uint8ClampedArray(shared_image_buffer)
 
 let _buffer_i = 0; // byte offset in shared_buffer. try to keep messages in memory for as long as possible by cycling through the buffer.
+
+/**
+ * Process message chunks. Depending on your OS, piped messages are buffered into ~64kb chunks. Multiple messages may be combined into 1 chunk, or 1 long message may take up multiple chunks. 
+ * @param chunk 
+ */
 function process_message(chunk)
 {
 	let chunk_length = chunk.length;
@@ -119,6 +102,9 @@ function process_message(chunk)
 	}
 }
 
+/**
+ * Receive ipc data. This should be the result of a previous python API call.
+ */
 blender_process.stdio[3].on('data', function (chunk) 
 {
 	// Consider starting from the beginning of the buffer to make sure enough space is available for potential long multi-chunk messages.
@@ -143,20 +129,10 @@ blender_process.stdio[3].on('data', function (chunk)
 	_buffer_i += chunk.length;
 });
 
-
-
-
-
-
-
-// blender_process.stdin.write(`import bpy;
-// bpy.context.scene.render.filepath = '/dev/shm/render';
-// bpy.ops.render.render(animation=True);
-// print('done');
-// `)
-
-
-
+/**
+ * Prior to closing the electron window, make sure the UPBGE process is killed
+ * @param callback 
+ */
 function on_exit(callback)
 {
 	blender_process.kill("SIGKILL");
@@ -165,44 +141,35 @@ function on_exit(callback)
 remote.app.on("will-quit", on_exit);
 
 
+/**
+ * Forward python stdout to electron's console
+ */
 blender_process.stdout.on('data', (data) => 
 {
 	console.log(`stdout: ${data}`);
 });
 
+
+/**
+ * Forward python stderr to electron's console
+ */
 blender_process.stderr.on('data', (data) =>
 {
 	console.error(`stderr: ${data}`);
 });
 
-
-
-
 runClient();
 
-const wait_for_image_load = img => new Promise((res, rej) =>
-{
-	img.onload = () => res();
-	img.onerror = rej;
-
-});
-
-const wait_for_animation_frame = () =>
-{
-	return new Promise((resolve) => window.requestAnimationFrame(resolve));
-}
-
-
+/**
+ * @type {ImageData}
+ */
+let image;
 let canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false
 canvas.width = resolution[0];
 canvas.height = resolution[1];
-let [width, height] = resolution
-/**
- * @type {ImageData}
- */
-let image;
+
 
 /**
  * Render the image from the ImageData "image" variable to the canvas
@@ -261,7 +228,7 @@ async function next_frame()
  * Consider updating the resolution. This reallocates the buffers
  * @param new_width 
  * @param new_height 
- * @param force 
+ * @param force If true, refresh buffers even if width didn't change. Useful for init.
  * @returns 
  */
 async function update_resolution(new_width,new_height,force=false)
@@ -278,8 +245,6 @@ async function update_resolution(new_width,new_height,force=false)
 	// If buffer too small, create new one.
 	if(shared_image_buffer.byteLength < resolution[0] * resolution[1] * 4)
 	{
-		//fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
-		//shared_image_buffer = new ArrayBuffer(resolution[0] * resolution[1] * 4)
 		shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer
 	}
 	// Resize view

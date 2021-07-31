@@ -12,8 +12,6 @@ import platform
 
 tempdir = tempfile.gettempdir() + '\\' if platform.system() == 'Windows' else '/dev/shm/' 
 
-
-
 class Server(object):
 	def __init__(self):
 		self.viewport_texture = None
@@ -86,9 +84,6 @@ class Server(object):
 		# glowing_cube = scene.objects["GlowingCube"]
 		# material = glowing_cube.material_slots[0]
 		# material.diffuse_color
-
-
-
 	
 if __name__ == '__main__':
 	print("inited")
