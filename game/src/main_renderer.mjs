@@ -1,9 +1,13 @@
+import {NamedPipe} from "./NamedPipe.js"
+
 const { remote} = require('electron');
 const fs = require('fs');
 const $ = require('jquery');
 const { spawn } = require("child_process");
 const os = require('os');
 const mmap = require("mmap-io");
+const net = require('net');
+
 
 var resolution = [1920, 1080]
 const MAX_DATA = 4*1920*1080 * 4 + 32; // initial max data passed between python and nodejs. Currently at least 1 4k image + 32 bytes for some variables
@@ -14,6 +18,23 @@ const temp_path = is_win  ? os.tmpdir() + '\\' : '/dev/shm/' ;
 const blenderplayer_path = is_win ? "../upbge-master/build_windows_x64_vc16_Release/bin/Release/blenderplayer.exe" : '../upbge-master/build_linux/bin/blenderplayer';
 
 console.log('Entered Main renderer',temp_path)
+
+
+
+
+/**
+ * @type {net.Server}
+ */
+var server;
+
+
+
+
+
+
+
+
+
 
 /**
  * Convert a hex string into an array of numbers
@@ -46,7 +67,7 @@ const wait_for_animation_frame = () =>
 	return new Promise((resolve) => window.requestAnimationFrame(resolve));
 }
 
-let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] }).on('error', function( err ){ throw err }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
+let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe'] }).on('error', function( err ){ throw err }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
 
 /**
  * @type {((index:number,length:number)=>any)[]}
@@ -105,7 +126,7 @@ function process_message(chunk)
 /**
  * Receive ipc data. This should be the result of a previous python API call.
  */
-blender_process.stdio[3].on('data', function (chunk) 
+function on_data (chunk) 
 {
 	// Consider starting from the beginning of the buffer to make sure enough space is available for potential long multi-chunk messages.
 	if(remaining_message == 0 && _buffer_i > shared_buffer_view.length/2)
@@ -127,7 +148,12 @@ blender_process.stdio[3].on('data', function (chunk)
 	shared_buffer_view.set(chunk,_buffer_i);
 	process_message(chunk)
 	_buffer_i += chunk.length;
-});
+}
+
+
+let pipe = new NamedPipe("/tmp/test.sock","r+",{on_data})
+
+//blender_process.stdio[3].on('data', on_data);
 
 /**
  * Prior to closing the electron window, make sure the UPBGE process is killed
@@ -135,6 +161,7 @@ blender_process.stdio[3].on('data', function (chunk)
  */
 function on_exit(callback)
 {
+	server.close();
 	blender_process.kill("SIGKILL");
 }
 
@@ -276,7 +303,7 @@ async function updateImage()
 	// At this point the next frame should not have finished rendering yet. Use the time to render the old frame to canvas. This should finish before the new frame is rendered and fetched from gpu
 	set_image()
 	
-	console.log(performance.now() - start , 'is what js takes')
+	//console.log(performance.now() - start , 'is what js takes')
 }
 
 let fps = 0;
@@ -298,9 +325,12 @@ async function update_loop()
 }
 
 
+
 async function runClient(address)
 {
 	await wait(1000)
+
+	
 
 	let result = await remote_command('set_resolution', resolution);
 	let res = new Uint16Array(shared_buffer,result.byteOffset + 4,2);
@@ -308,6 +338,24 @@ async function runClient(address)
 	await update_resolution(res[0],res[1],true);
 
 	update_loop();
+
+
+
+
+	// server = net.createServer(function(stream) {
+	// 	stream.on('data', function(c) {
+	// 		console.log('data:', c.toString());
+	// 	});
+	// 	stream.on('end', function() {
+	// 		server.close();
+	// 	});
+	// });
+	
+	// server.listen('/tmp/test.sock');
+	
+	//var stream = net.connect('/tmp/test.sock');
+		//stream.write('hello');
+		//stream.end();
 }
 
 $('#resize').click(() =>

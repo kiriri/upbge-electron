@@ -1,6 +1,6 @@
 # Any function that should be available to electron should be defined in here (in the Server class).
 # Any such function must take parameters in the form of an array : example(self,params)
-# Any such function must write a result to the ipc pipe : os.write(3, (0).to_bytes(4, byteorder='little'))
+# Any such function must write a result to the ipc pipe : self.send((0).to_bytes(4, byteorder='little'))
 # The first 4 bytes represent the length of the result message. An empty message is therefore just a 4-byte 0.
 import os
 import bge
@@ -12,21 +12,40 @@ import platform
 
 tempdir = tempfile.gettempdir() + '\\' if platform.system() == 'Windows' else '/dev/shm/' 
 
+# Path of output named pipe (/fifo)
+path = "/tmp/test.sock"
+
+  
+
+
 class Server(object):
 	def __init__(self):
+		# Create a FIFO named path
+		# with the specified mode
+		# using os.mkfifo() method
+		if not os.path.exists(path):
+			os.mkfifo(path, 0o600)
+		try:
+			self.fifo_fd = os.open(path,os.O_WRONLY)
+		except Exception as e:
+			print(e,flush=True)
+
 		self.viewport_texture = None
-		self.fd3 = os.fdopen(3,'w')
+		# self.fd3 = os.fdopen(3,'w')
 		self.image_file = open(tempdir + 'test', "rb+")
 		self.image_file_size = os.fstat(self.image_file.fileno()).st_size
 		print(str(self.image_file_size),flush=True)
 		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4)
 
+	def send(self,message):
+		os.write(self.fifo_fd,message)
+
 	# API : Render the next frame
 	def next_frame(self,params):
 		start = time.time_ns()
 		bge.logic.NextFrame()
-		os.write(3, (0).to_bytes(4, byteorder='little'))
-		print('Rendered next frame ' + str((time.time_ns() - start)/1000000),flush=True)
+		self.send((0).to_bytes(4, byteorder='little'))
+		#print('Rendered next frame ' + str((time.time_ns() - start)/1000000),flush=True)
 
 	# API : Quit the game
 	def quit(self,params):
@@ -53,9 +72,9 @@ class Server(object):
 		self.viewport_texture = bge.texture.ImageViewport(flip=False, alpha=True, scale=False, whole=True, depth=False, zbuff=False)
 
 		# Write actual resolution as result. This may differ from intended resolution, if the window manager messes stuff up.
-		os.write(3, (4).to_bytes(4, byteorder='little'))
-		os.write(3, self.viewport_texture.size[0].to_bytes(2, byteorder='little'))
-		os.write(3, self.viewport_texture.size[1].to_bytes(2, byteorder='little'))
+		self.send((4).to_bytes(4, byteorder='little'))
+		self.send(self.viewport_texture.size[0].to_bytes(2, byteorder='little'))
+		self.send(self.viewport_texture.size[1].to_bytes(2, byteorder='little'))
 
 		print("change",flush=True)
 
@@ -64,11 +83,11 @@ class Server(object):
 		start = time.time_ns()
 		self.update_texture()
 		
-		os.write(3, (4).to_bytes(4, byteorder='little'))
-		os.write(3, self.viewport_texture.size[0].to_bytes(2, byteorder='little'))
-		os.write(3, self.viewport_texture.size[1].to_bytes(2, byteorder='little'))
+		self.send((4).to_bytes(4, byteorder='little'))
+		self.send(self.viewport_texture.size[0].to_bytes(2, byteorder='little'))
+		self.send(self.viewport_texture.size[1].to_bytes(2, byteorder='little'))
 
-		print('Updated texture2 ' + str((time.time_ns() - start)/1000000),flush=True)
+		#print('Updated texture2 ' + str((time.time_ns() - start)/1000000),flush=True)
 	
 	# Fetch the final render from gpu and store as bytearray under self.image_mmap
 	def update_texture(self):
@@ -79,7 +98,7 @@ class Server(object):
 	# API : A demo function for changing the emission color in the demo main.blend
 	def set_light_color(self,params):
 		bpy.data.materials["GlowingCube"].node_tree.nodes["Emission"].inputs[0].default_value = (params[0],params[1],params[2], 1)
-		os.write(3, (0).to_bytes(4, byteorder='little'))
+		self.send((0).to_bytes(4, byteorder='little'))
 		# scene = bge.logic.getCurrentScene()
 		# glowing_cube = scene.objects["GlowingCube"]
 		# material = glowing_cube.material_slots[0]

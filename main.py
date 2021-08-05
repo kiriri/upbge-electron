@@ -32,7 +32,7 @@ def update():
 			break
 		message = json.loads(line)
 		latency_in = round(time.time()*1000) - message['time']
-		print('Latency in is ' + str(latency_in))
+		#print('Latency in is ' + str(latency_in))
 		try:
 			getattr(server, message['method'])(message['params'])
 		except Exception as e:
