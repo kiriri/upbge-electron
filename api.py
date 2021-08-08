@@ -10,25 +10,32 @@ import mmap
 import tempfile
 import platform
 
-tempdir = tempfile.gettempdir() + '\\' if platform.system() == 'Windows' else '/dev/shm/' 
+is_win = platform.system() == 'Windows'
+
+if is_win:
+	import win32file
+
+tempdir = tempfile.gettempdir() + '\\' if is_win else '/dev/shm/' 
+
 
 # Path of output named pipe (/fifo)
-path = "/tmp/test.sock"
-
-  
+path = "test.sock"
 
 
 class Server(object):
 	def __init__(self):
+
+		print(os.fstat(3),flush=True)
+
 		# Create a FIFO named path
 		# with the specified mode
 		# using os.mkfifo() method
-		if not os.path.exists(path):
-			os.mkfifo(path, 0o600)
-		try:
-			self.fifo_fd = os.open(path,os.O_WRONLY)
-		except Exception as e:
-			print(e,flush=True)
+		# if not os.path.exists(path):
+		# 	os.mkfifo(path, 0o600)
+		# try:
+		# 	self.fifo_fd = os.open(path,os.O_WRONLY)
+		# except Exception as e:
+		# 	print(e,flush=True)
 
 		self.viewport_texture = None
 		# self.fd3 = os.fdopen(3,'w')
@@ -37,8 +44,63 @@ class Server(object):
 		print(str(self.image_file_size),flush=True)
 		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4)
 
+		self.fd = -1
+		self.environment = "?" # "js" | "cs" :: Used to setup the output communication correctly. 
+
+	def init_named(self):
+		try:
+			print("Initing named ",flush=True)
+			global path
+			if is_win:
+				print("WIN ",flush=True)
+
+				path = "\\\\.\\pipe\\" + path
+				# Keep file in memory, else it gets closed automatically
+				self.file = win32file.CreateFile(
+					path, 
+				win32file.GENERIC_READ | win32file.GENERIC_WRITE, 
+				0, 
+				None, 
+				win32file.OPEN_EXISTING, 
+				0, 
+				None)
+				self.fd = self.file.__int__
+			else:
+				print("LIN ",flush=True)
+				path = "/dev/shm/"+path
+				if not os.path.exists(path):
+					print('calling mkfifo on ' + path, flush=True)
+					os.mkfifo(path, 0o600)
+					print('called mkfifo on ' + path, flush=True)
+				try:
+					self.fd = os.open(path,os.O_WRONLY)
+					print("Opened ",flush=True)
+				except Exception as e:
+					print(e,flush=True)
+		except Exception as e:
+			print(e,flush=True)
+
+	# Send a message back to the parent process. 
+	# Usually, this should happen via the fd3 pipe. But under .NET, this seems to be impossible which is why we have to use named pipes in Unity instead.
 	def send(self,message):
-		os.write(self.fifo_fd,message)
+		global path
+		if self.fd < 0:
+			if self.environment == "cs": # C# Cant use fd3 even if it is opened automatically by the os.
+				self.init_named()
+			else:
+				try:
+					os.write(3,message)
+					self.fd = 3
+					return
+				except:
+					self.init_named()
+		
+		os.write(self.fd,message)
+				
+
+	def set_environment(self,params):
+		self.environment = params[0]
+		self.send((0).to_bytes(4, byteorder='little'))
 
 	# API : Render the next frame
 	def next_frame(self,params):
@@ -57,6 +119,8 @@ class Server(object):
 	# API : Set render resolution
 	def set_resolution(self,params):
 		print('set resolution to ' + str(params[0]) + ' ' + str(params[1]),flush=True)
+		params[0] = int(params[0])
+		params[1] = int(params[1])
 		bge.render.setWindowSize(params[0], params[1])
 		bpy.context.scene.game_settings.resolution_x = params[0]
 		bpy.context.scene.game_settings.resolution_y = params[1]

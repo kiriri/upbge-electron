@@ -9,6 +9,11 @@ upbge-master/build_*
 game/node_modules/*
 !game/node_modules/mmap-io/
 
+UPBGE-Unity/*
+!UPBGE-Unity/Assets
+*.meta
+
+
 
 
 

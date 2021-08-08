@@ -55,19 +55,7 @@ function hex_to_color(str,len= str.length < 6 ? 1 : 2)
 
 const wait = ms => new Promise(res => remote.getGlobal('setTimeout')(res, ms));
 
-const wait_for_image_load = img => new Promise((res, rej) =>
-{
-	img.onload = () => res();
-	img.onerror = rej;
-
-});
-
-const wait_for_animation_frame = () =>
-{
-	return new Promise((resolve) => window.requestAnimationFrame(resolve));
-}
-
-let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe'] }).on('error', function( err ){ throw err }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
+let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe','pipe'] }).on('error', function( err ){ throw err }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
 
 /**
  * @type {((index:number,length:number)=>any)[]}
@@ -151,9 +139,9 @@ function on_data (chunk)
 }
 
 
-let pipe = new NamedPipe("/tmp/test.sock","r+",{on_data})
+//let pipe = new NamedPipe("test.sock","r+",{on_data})
 
-//blender_process.stdio[3].on('data', on_data);
+blender_process.stdio[3].on('data', on_data);
 
 /**
  * Prior to closing the electron window, make sure the UPBGE process is killed

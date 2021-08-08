@@ -27,6 +27,8 @@ print(sys.argv, flush=True)
 def update():
 	global server
 	lines = input().split("\r\n",)
+	print("Received Input",flush=True)
+	print("Received " + str(lines),flush=True)
 	for line in lines:
 		if line == "":
 			break
