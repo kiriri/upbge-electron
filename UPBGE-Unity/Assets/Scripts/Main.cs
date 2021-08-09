@@ -20,9 +20,12 @@ public class Main : MonoBehaviour
 {
 #if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX
 	const string path = "/dev/shm/test.sock";
+	const string mmap_path = "/dev/shm/test";
 #elif UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
 	const string path = "\\\\.\\test.sock";
+	const string mmap_path = Path.GetTempPath() + "test";
 #endif
+
 
 	// Render Target. Contains Blender render.
 	Texture2D texture;
@@ -56,7 +59,7 @@ public class Main : MonoBehaviour
 
 		//print("Started " + new Comm(3).Stream);
 
-		WaitForConnection();
+		InitializeUPBGE();
 
 		// using (NamedPipeServerStream server = new NamedPipeServerStream(path,PipeDirection.Out,1,PipeTransmissionMode.Byte))
 		// {
@@ -79,35 +82,9 @@ public class Main : MonoBehaviour
 		// }
 	}
 
-
-	async void Update()
+	async void InitializeUPBGE()
 	{
-		if(!initialized)
-			return;
-
-		var fetch_image_promise = send_message("fetch_image", new string[0]); 
-		await next_frame_promise;
-		await fetch_image_promise;
-		UpdateImage();
-		next_frame_promise = send_message("next_frame", new string[0]);
-
-	}
-
-	void OnApplicationQuit()
-	{
-		process.Kill();
-	}
-
-	Promise<byte[]> send_message(string method_name, string[] args)
-	{
-		var result = new Promise<byte[]>();
-		promises.Enqueue(result);
-		process.StandardInput.Write("{ \"method\": \"" + method_name + "\", \"params\": [\"" + String.Join("\",\"", args) + "\"],  \"time\":" + DateTime.Now.Millisecond + " }\r\n");
-		return result;
-	}
-
-	async void WaitForConnection()
-	{
+		Debug.Log(Path.GetTempPath());
 		var fileName = Application.dataPath + "/../../upbge-master/build_linux/bin/blenderplayer";
 		var arguments = Application.dataPath + "/../../main.blend";
 		var process = this.process = new System.Diagnostics.Process();
@@ -137,9 +114,38 @@ public class Main : MonoBehaviour
 
 	}
 
+
+	async void Update()
+	{
+		if(!initialized)
+			return;
+
+		var fetch_image_promise = send_message("fetch_image", new string[0]); 
+		await next_frame_promise;
+		await fetch_image_promise;
+		UpdateImage();
+		next_frame_promise = send_message("next_frame", new string[0]);
+
+	}
+
+	void OnApplicationQuit()
+	{
+		process.Kill();
+	}
+
+	Promise<byte[]> send_message(string method_name, string[] args)
+	{
+		var result = new Promise<byte[]>();
+		promises.Enqueue(result);
+		process.StandardInput.Write("{ \"method\": \"" + method_name + "\", \"params\": [\"" + String.Join("\",\"", args) + "\"],  \"time\":" + DateTime.Now.Millisecond + " }\r\n");
+		return result;
+	}
+
+
+
 	unsafe void InitializeMMap()
 	{
-		using (var mmf = MemoryMappedFile.CreateFromFile("/dev/shm/test", FileMode.Open, "/dev/shm/test"))
+		using (var mmf = MemoryMappedFile.CreateFromFile(mmap_path, FileMode.Open, mmap_path))
 		{
 			using (var accessor = mmf.CreateViewAccessor())
 			{
@@ -187,7 +193,6 @@ public class Main : MonoBehaviour
 				//	Debug.Log("Output found " + String.Join(",", line)); // 28
 
 				var promise = promises.Dequeue();
-				Debug.Log(line);
 				promise.resolve(line);
 			}
 		}).Start();

@@ -39,7 +39,8 @@ class Server(object):
 
 		self.viewport_texture = None
 		# self.fd3 = os.fdopen(3,'w')
-		self.image_file = open(tempdir + 'test', "rb+")
+		self.image_file = open(tempdir + 'test', "wb+") # Creates a new file if none exists
+		self.image_file.write(bytearray(1920*1080*4))
 		self.image_file_size = os.fstat(self.image_file.fileno()).st_size
 		print(str(self.image_file_size),flush=True)
 		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4)
