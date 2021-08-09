@@ -49,6 +49,9 @@ public class Main : MonoBehaviour
 
 	// True once all IPC is properly setup and Blender is ready to go.
 	bool initialized = false;
+	bool updating = false;
+
+	int last_frame_time = 0;
 
 	// Start is called before the first frame update
 	void Start()
@@ -85,14 +88,19 @@ public class Main : MonoBehaviour
 	async void InitializeUPBGE()
 	{
 		Debug.Log(Path.GetTempPath());
-		var fileName = Application.dataPath + "/../../upbge-master/build_linux/bin/blenderplayer";
+		#if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX
+			var fileName = Application.dataPath + "/../../upbge-master/build_linux/bin/blenderplayer";
+		#elif UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+			var fileName = Application.dataPath + "/../../upbge-master/build_windows_x64_vc16_Release/bin/Release/blenderplayer.exe";
+		#endif
+		
 		var arguments = Application.dataPath + "/../../main.blend";
 		var process = this.process = new System.Diagnostics.Process();
 		process.StartInfo.FileName = fileName;
 		process.StartInfo.Arguments = arguments;
 
 		process.StartInfo.UseShellExecute = false;
-		process.StartInfo.RedirectStandardOutput = true;
+		process.StartInfo.RedirectStandardOutput = true; // BUG : Stutters after a while. This is not caused by the Unity Console
 		process.StartInfo.RedirectStandardInput = true;
 		process.StartInfo.RedirectStandardError = true;
 		process.OutputDataReceived += (sender, args) => Debug.Log("received output: " + args.Data);
@@ -117,15 +125,17 @@ public class Main : MonoBehaviour
 
 	async void Update()
 	{
-		if(!initialized)
+		if(!initialized || updating)
 			return;
-
+		updating = true;
 		var fetch_image_promise = send_message("fetch_image", new string[0]); 
 		await next_frame_promise;
 		await fetch_image_promise;
 		UpdateImage();
 		next_frame_promise = send_message("next_frame", new string[0]);
-
+		updating = false;
+		Debug.Log("Took " + (DateTime.Now.Millisecond - last_frame_time));
+		last_frame_time = DateTime.Now.Millisecond;
 	}
 
 	void OnApplicationQuit()
@@ -164,7 +174,7 @@ public class Main : MonoBehaviour
 		this.texture.LoadRawTextureData(mmap_pointer, 1920 * 1080 * 4);
 		texture.Apply();
 		
-		//Debug.Log("Done " + watch.ElapsedMilliseconds);
+		Debug.Log("Done " + watch.ElapsedMilliseconds);
 	}
 
 	void ReadOutputs()
@@ -179,21 +189,17 @@ public class Main : MonoBehaviour
 			Thread.CurrentThread.IsBackground = true;
 
 			Debug.Log("Started Thread");
-
+			var file = new FileInfo(path).OpenRead();
+			output_stream = new BinaryReader(file);
 			while (true)
 			{
-				var file = new FileInfo(path).OpenRead();
+				
 
-				output_stream = new BinaryReader(file);
-
-				var length = output_stream.ReadInt32(); // blocks forever?
-				//Debug.Log("Length is " + length);
-				byte[] line = output_stream.ReadBytes(length);
-				//if (line.Length > 0)
-				//	Debug.Log("Output found " + String.Join(",", line)); // 28
-
+				var length = output_stream.ReadInt32(); // Blocks until the next 4 bytes come in. These describe the length of the next message.
+				byte[] data = output_stream.ReadBytes(length); // read the message
+				
 				var promise = promises.Dequeue();
-				promise.resolve(line);
+				promise.resolve(data); // return the data as the result of the promise, which was registered when the function call was initiated in c#.
 			}
 		}).Start();
 
