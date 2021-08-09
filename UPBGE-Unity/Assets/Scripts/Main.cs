@@ -1,13 +1,19 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.IO.MemoryMappedFiles;
 using System.IO.Pipes;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 using UnityEngine;
+
+using Debug = UnityEngine.Debug;
 
 
 public class Main : MonoBehaviour
@@ -18,18 +24,39 @@ public class Main : MonoBehaviour
 	const string path = "\\\\.\\test.sock";
 #endif
 
+	// Render Target. Contains Blender render.
+	Texture2D texture;
 
+	// Render Target. Blender result is mapped onto this.
+	public UnityEngine.UI.RawImage target;
+
+	// Blender Process
 	System.Diagnostics.Process process;
+	// Blender Function calls return results via this stream.
 	BinaryReader output_stream;
+
+	// Pointer to the shared memory location where blender puts the render image
+	IntPtr mmap_pointer;
+
+	// List of Promises to blender function call results. They get removed as soon as they are resolved.
+	Queue<Promise<byte[]>> promises = new Queue<Promise<byte[]>>();
+
+	// Await for the next blender frame to finish rendering
+	Promise<byte[]> next_frame_promise;
+
+	// True once all IPC is properly setup and Blender is ready to go.
+	bool initialized = false;
 
 	// Start is called before the first frame update
 	void Start()
 	{
+		texture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false, false);
+		target.texture = texture;
 
 
 		//print("Started " + new Comm(3).Stream);
 
-		StartCoroutine(WaitForConnection());
+		WaitForConnection();
 
 		// using (NamedPipeServerStream server = new NamedPipeServerStream(path,PipeDirection.Out,1,PipeTransmissionMode.Byte))
 		// {
@@ -52,17 +79,34 @@ public class Main : MonoBehaviour
 		// }
 	}
 
+
+	async void Update()
+	{
+		if(!initialized)
+			return;
+
+		var fetch_image_promise = send_message("fetch_image", new string[0]); 
+		await next_frame_promise;
+		await fetch_image_promise;
+		UpdateImage();
+		next_frame_promise = send_message("next_frame", new string[0]);
+
+	}
+
 	void OnApplicationQuit()
 	{
 		process.Kill();
 	}
 
-	void send_message(string method_name, string[] args)
+	Promise<byte[]> send_message(string method_name, string[] args)
 	{
+		var result = new Promise<byte[]>();
+		promises.Enqueue(result);
 		process.StandardInput.Write("{ \"method\": \"" + method_name + "\", \"params\": [\"" + String.Join("\",\"", args) + "\"],  \"time\":" + DateTime.Now.Millisecond + " }\r\n");
+		return result;
 	}
 
-	IEnumerator WaitForConnection()
+	async void WaitForConnection()
 	{
 		var fileName = Application.dataPath + "/../../upbge-master/build_linux/bin/blenderplayer";
 		var arguments = Application.dataPath + "/../../main.blend";
@@ -80,45 +124,47 @@ public class Main : MonoBehaviour
 		process.BeginOutputReadLine();
 
 
-		yield return new WaitForSeconds(2);
-		ReadOutputs2();
+		await Task.Delay(1000);
+		ReadOutputs();
 
-		send_message("set_environment", new[] { "cs" });
-		send_message("set_resolution", new[] { "1920","1080" });
+		await send_message("set_environment", new[] { "cs" });
+		await send_message("set_resolution", new[] { "1920", "1080" });
+		next_frame_promise = send_message("next_frame", new string[0]);
+		InitializeMMap();
+		UpdateImage();
 
-
-		//StartCoroutine(ReadOutputs());
-
+		initialized = true;
 
 	}
 
-	IEnumerator ReadOutputs()
+	unsafe void InitializeMMap()
 	{
-		Debug.Log("Path is  " + path);
-		var file = new FileInfo(path).OpenRead();
-
-		output_stream = new BinaryReader(file);
-		yield return new WaitForSeconds(0.1f);
-
-		byte[] line;
-		var length = output_stream.ReadInt32(); // blocks forever?
-		Debug.Log(length);
-		// Read and display lines from the file until the end of
-		// the file is reached.
-		while (true)
+		using (var mmf = MemoryMappedFile.CreateFromFile("/dev/shm/test", FileMode.Open, "/dev/shm/test"))
 		{
-			//if(output_stream.DataAvailable)
-			line = output_stream.ReadBytes(int.MaxValue);
-			if (line.Length > 0)
-				Debug.Log("Output found " + String.Join(",", line)); // 28
-			yield return new WaitForSeconds(0.1f);
+			using (var accessor = mmf.CreateViewAccessor())
+			{
+				byte* pointer = null;
+				accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref pointer);
+				mmap_pointer = new IntPtr(pointer);			
+			}
 		}
 	}
 
-	void ReadOutputs2()
+	void UpdateImage()
+	{
+		var watch = new Stopwatch();
+		watch.Start();
+
+		this.texture.LoadRawTextureData(mmap_pointer, 1920 * 1080 * 4);
+		texture.Apply();
+		
+		//Debug.Log("Done " + watch.ElapsedMilliseconds);
+	}
+
+	void ReadOutputs()
 	{
 		Debug.Log("Path is  " + path);
-		
+
 
 		// Read and display lines from the file until the end of
 		// the file is reached.
@@ -127,7 +173,7 @@ public class Main : MonoBehaviour
 			Thread.CurrentThread.IsBackground = true;
 
 			Debug.Log("Started Thread");
-			
+
 			while (true)
 			{
 				var file = new FileInfo(path).OpenRead();
@@ -135,62 +181,34 @@ public class Main : MonoBehaviour
 				output_stream = new BinaryReader(file);
 
 				var length = output_stream.ReadInt32(); // blocks forever?
-				Debug.Log("Length is " + length);
+				//Debug.Log("Length is " + length);
 				byte[] line = output_stream.ReadBytes(length);
-				if (line.Length > 0)
-					Debug.Log("Output found " + String.Join(",", line)); // 28
+				//if (line.Length > 0)
+				//	Debug.Log("Output found " + String.Join(",", line)); // 28
+
+				var promise = promises.Dequeue();
+				Debug.Log(line);
+				promise.resolve(line);
 			}
 		}).Start();
-		
+
 	}
 
-	/**
-	* Call a function in blender's api.py script remotely. Returns a promise with a view to the data. This view is volatile and should be copied asap.
-	* @param {string} method_name Name of the method in python
-	* @param {Array} params array of parameters
-	* @returns {Uint8ClampedArray} result in bytes (result exists on shared_buffer object) . Volatile.
-	*/
-	// async Buffer remote_command(string method_name, string[] args)
-	// {
-	// 	let promise = new Promise((resolve) =>
-	// 	{
-	// 		result_queue.push(resolve)
-	// 	})
-
-	// 	blender_process.stdin.write(JSON.stringify({ 'method': method_name, args, time:Date.now() }) + '\r\n', (e) => { if (e) console.error(e);  });
-
-	// 	let array = await promise;
-	// 	return array;
-	// }
 }
 
 
-class Comm : IDisposable
+public class Promise<T> : System.Object
 {
-	// [DllImport("MSVCRT.DLL", CallingConvention = CallingConvention.Cdecl)]
-	// extern static IntPtr _get_osfhandle(int fd);
-
-	[DllImport("libc.so.6")]
-	extern static int fileno(int fd); // BUG : fd is File*, which we don't have access to
-									  //private static extern int getpid ();
-
-	public readonly Stream Stream;
-
-	public Comm(int fd)
+	public TaskCompletionSource<T> result = new TaskCompletionSource<T>();
+	
+	public TaskAwaiter<T> GetAwaiter()
 	{
-		//var handle = getpid();
-		var handle = fileno(fd);
-		// if (handle == IntPtr.Zero || handle == (IntPtr)(-1) || handle == (IntPtr)(-2))
-		// {
-		//     throw new ApplicationException("invalid handle");
-		// }
-
-		// var fileHandle = new SafeFileHandle(handle, true);
-		// Stream = new FileStream(fileHandle, FileAccess.ReadWrite);
+		var task = result.Task;
+		return task.GetAwaiter();
 	}
 
-	public void Dispose()
+	public void resolve(T value)
 	{
-		Stream.Dispose();
+		result.SetResult(value);
 	}
 }
