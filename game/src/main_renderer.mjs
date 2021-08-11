@@ -1,13 +1,9 @@
-import {NamedPipe} from "./NamedPipe.js"
-
 const { remote} = require('electron');
 const fs = require('fs');
 const $ = require('jquery');
 const { spawn } = require("child_process");
 const os = require('os');
 const mmap = require("mmap-io");
-const net = require('net');
-
 
 var resolution = [1920, 1080]
 const MAX_DATA = 4*1920*1080 * 4 + 32; // initial max data passed between python and nodejs. Currently at least 1 4k image + 32 bytes for some variables
@@ -18,23 +14,6 @@ const temp_path = is_win  ? os.tmpdir() + '\\' : '/dev/shm/' ;
 const blenderplayer_path = is_win ? "../upbge-master/build_windows_x64_vc16_Release/bin/Release/blenderplayer.exe" : '../upbge-master/build_linux/bin/blenderplayer';
 
 console.log('Entered Main renderer',temp_path)
-
-
-
-
-/**
- * @type {net.Server}
- */
-var server;
-
-
-
-
-
-
-
-
-
 
 /**
  * Convert a hex string into an array of numbers
@@ -55,27 +34,30 @@ function hex_to_color(str,len= str.length < 6 ? 1 : 2)
 
 const wait = ms => new Promise(res => remote.getGlobal('setTimeout')(res, ms));
 
+// Create UPBGE process
 let blender_process = spawn(blenderplayer_path, ['../main.blend'], { stdio: ['pipe', 'pipe', 'pipe','pipe'] }).on('error', function( err ){ throw err }) //,'-P','../start_game.py','test' ,'--python-console', '-P','../ramdisk_test.py',
 
+// Setup Shared Memory Map for sharing the render image across processes.
+let image_mmap = fs.openSync(temp_path+'test.tmp','w+');
+fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
+const prot = mmap.PROT_WRITE | mmap.PROT_READ
+const priv = mmap.MAP_SHARED
+let shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer
+let shared_image_buffer_view = new Uint8ClampedArray(shared_image_buffer)
+
+
+// Setup a receiver to process blender output that gets sent via pipe fd3 after a python method call has been made. 
 /**
  * @type {((index:number,length:number)=>any)[]}
  */
 let result_queue = [];
+let max_result_length = MAX_DATA;
 let message_length; // Some messages exceed the buffer size, which causes multiple data events in a row. The first 4 bytes in a data packet define how long the packet will be. This keeps track of that
 let remaining_message = 0; // if other than 0, then the current message continues in the next chunk
-
-let max_result_length = MAX_DATA;
-
-let image_mmap = fs.openSync(temp_path+'test','w+');
-fs.writeSync(image_mmap,new Uint8ClampedArray(new ArrayBuffer(resolution[0]*resolution[1]*4)))
-const prot = mmap.PROT_WRITE | mmap.PROT_READ
-const priv = mmap.MAP_SHARED
-let shared_buffer = new ArrayBuffer(max_result_length) // this is the underlying data in ram. You can define TypedArrays as views on it, and avoid allocating it again and again.
-let shared_image_buffer = mmap.map(resolution[0]*resolution[1]*4, prot, priv, image_mmap).buffer
-let shared_buffer_view = new Uint8ClampedArray(shared_buffer) // max data 
-let shared_image_buffer_view = new Uint8ClampedArray(shared_image_buffer)
-
 let _buffer_i = 0; // byte offset in shared_buffer. try to keep messages in memory for as long as possible by cycling through the buffer.
+
+let shared_buffer = new ArrayBuffer(max_result_length) // this is the underlying data in ram. You can define TypedArrays as views on it, and avoid allocating it again and again.
+let shared_buffer_view = new Uint8ClampedArray(shared_buffer) // max data 
 
 /**
  * Process message chunks. Depending on your OS, piped messages are buffered into ~64kb chunks. Multiple messages may be combined into 1 chunk, or 1 long message may take up multiple chunks. 
@@ -111,6 +93,7 @@ function process_message(chunk)
 	}
 }
 
+
 /**
  * Receive ipc data. This should be the result of a previous python API call.
  */
@@ -132,16 +115,13 @@ function on_data (chunk)
 		shared_buffer_view = new_buffer_view;
 	}
 	
-
 	shared_buffer_view.set(chunk,_buffer_i);
 	process_message(chunk)
 	_buffer_i += chunk.length;
 }
 
-
-//let pipe = new NamedPipe("test.sock","r+",{on_data})
-
 blender_process.stdio[3].on('data', on_data);
+
 
 /**
  * Prior to closing the electron window, make sure the UPBGE process is killed
@@ -149,7 +129,6 @@ blender_process.stdio[3].on('data', on_data);
  */
 function on_exit(callback)
 {
-	server.close();
 	blender_process.kill("SIGKILL");
 }
 
@@ -296,6 +275,9 @@ async function updateImage()
 
 let fps = 0;
 
+/**
+ * Game Loop
+ */
 async function update_loop()
 {
 	next_frame();
@@ -318,32 +300,12 @@ async function runClient(address)
 {
 	await wait(1000)
 
-	
-
 	let result = await remote_command('set_resolution', resolution);
 	let res = new Uint16Array(shared_buffer,result.byteOffset + 4,2);
 	console.log(result,res)
 	await update_resolution(res[0],res[1],true);
 
 	update_loop();
-
-
-
-
-	// server = net.createServer(function(stream) {
-	// 	stream.on('data', function(c) {
-	// 		console.log('data:', c.toString());
-	// 	});
-	// 	stream.on('end', function() {
-	// 		server.close();
-	// 	});
-	// });
-	
-	// server.listen('/tmp/test.sock');
-	
-	//var stream = net.connect('/tmp/test.sock');
-		//stream.write('hello');
-		//stream.end();
 }
 
 $('#resize').click(() =>

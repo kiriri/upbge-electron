@@ -1,7 +1,7 @@
 
 When using a new version of upbge, the build python folder needs to be replaced with the modified version (from a previous version)
 When installing a new module, the local pip in the python folder needs to be used, like this : 
-./bin/pip3 install --target lib/python3.9 pyzmq
+./bin/python.exe -m pip install pywin32
 
 
 // How to run blenderplayer from blender.exe :

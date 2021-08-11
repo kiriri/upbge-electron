@@ -2,91 +2,67 @@
 # Any such function must take parameters in the form of an array : example(self,params)
 # Any such function must write a result to the ipc pipe : self.send((0).to_bytes(4, byteorder='little'))
 # The first 4 bytes represent the length of the result message. An empty message is therefore just a 4-byte 0.
+
 import os
 import bge
+import traceback
 import bpy
-import time
 import mmap
 import tempfile
 import platform
-
 is_win = platform.system() == 'Windows'
 
 if is_win:
 	import win32file
+	import win32pipe
 
 tempdir = tempfile.gettempdir() + '\\' if is_win else '/dev/shm/' 
 
-
 # Path of output named pipe (/fifo)
-path = "test.sock"
+path = "testsocket"
 
 
 class Server(object):
 	def __init__(self):
-
-		print(os.fstat(3),flush=True)
-
-		# Create a FIFO named path
-		# with the specified mode
-		# using os.mkfifo() method
-		# if not os.path.exists(path):
-		# 	os.mkfifo(path, 0o600)
-		# try:
-		# 	self.fifo_fd = os.open(path,os.O_WRONLY)
-		# except Exception as e:
-		# 	print(e,flush=True)
-
 		self.viewport_texture = None
-		# self.fd3 = os.fdopen(3,'w')
-		self.image_file = open(tempdir + 'test', "wb+") # Creates a new file if none exists
+		self.image_file = open(tempdir + 'test.tmp', "rb+") # Creates a new file if none exists
 		self.image_file.write(bytearray(1920*1080*4))
 		self.image_file_size = os.fstat(self.image_file.fileno()).st_size
-		print(str(self.image_file_size),flush=True)
 		self.image_mmap = mmap.mmap(self.image_file.fileno(),1920*1080*4)
-
 		self.fd = -1
+		self.fdf = None
 		self.environment = "?" # "js" | "cs" :: Used to setup the output communication correctly. 
 
 	def init_named(self):
 		try:
-			print("Initing named ",flush=True)
 			global path
+			
 			if is_win:
-				print("WIN ",flush=True)
-
-				path = "\\\\.\\pipe\\" + path
+				path = "\\\\.\\pipe\\" + path # This weird path is necessary. The prefix is just hidden in c#, but it gets added internally.
 				# Keep file in memory, else it gets closed automatically
-				self.file = win32file.CreateFile(
-					path, 
-				win32file.GENERIC_READ | win32file.GENERIC_WRITE, 
-				0, 
-				None, 
-				win32file.OPEN_EXISTING, 
-				0, 
-				None)
-				self.fd = self.file.__int__
+				self.fdf = win32file.CreateFile(path, 
+                              win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                              0, None,
+                              win32file.OPEN_EXISTING,
+                              0, None)
+				self.fd = self.fdf.__int__()
 			else:
-				print("LIN ",flush=True)
 				path = "/dev/shm/"+path
 				if not os.path.exists(path):
-					print('calling mkfifo on ' + path, flush=True)
 					os.mkfifo(path, 0o600)
-					print('called mkfifo on ' + path, flush=True)
 				try:
 					self.fd = os.open(path,os.O_WRONLY)
-					print("Opened ",flush=True)
 				except Exception as e:
-					print(e,flush=True)
+					print(str(e) + traceback.format_exc(),flush=True)
 		except Exception as e:
-			print(e,flush=True)
+			print(str(e) + traceback.format_exc(),flush=True)
 
-	# Send a message back to the parent process. 
+	# Send a message back to the parent process.
 	# Usually, this should happen via the fd3 pipe. But under .NET, this seems to be impossible which is why we have to use named pipes in Unity instead.
 	def send(self,message):
 		global path
-		if self.fd < 0:
-			if self.environment == "cs": # C# Cant use fd3 even if it is opened automatically by the os.
+		if self.fd < 0: # No File Descriptor defined : Need to find out what pipe to use first
+			if self.environment == "cs": # C# can't use fd3 even if it is opened automatically by the os.
 				self.init_named()
 			else:
 				try:
@@ -95,9 +71,12 @@ class Server(object):
 					return
 				except:
 					self.init_named()
-		
-		os.write(self.fd,message)
-				
+		print("Writing " + str(self.fd),flush=True)
+		if self.fdf:
+			errCode,nBytesWritten = win32file.WriteFile(self.fdf,message)
+		else:
+			os.write(self.fd,message)
+
 
 	def set_environment(self,params):
 		self.environment = params[0]
@@ -105,8 +84,8 @@ class Server(object):
 
 	# API : Render the next frame
 	def next_frame(self,params):
-		start = time.time_ns()
-		bge.logic.NextFrame()
+		#start = time.time_ns()
+		bge.logic.NextFrame() # Synchronous
 		self.send((0).to_bytes(4, byteorder='little'))
 		#print('Rendered next frame ' + str((time.time_ns() - start)/1000000),flush=True)
 
@@ -145,7 +124,7 @@ class Server(object):
 
 	# API : Write the render to an mmap and return the width/height directly. 
 	def fetch_image(self,params):
-		start = time.time_ns()
+		#start = time.time_ns()
 		self.update_texture()
 		
 		self.send((4).to_bytes(4, byteorder='little'))

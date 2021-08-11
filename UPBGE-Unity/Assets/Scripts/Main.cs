@@ -1,148 +1,139 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.MemoryMappedFiles;
-using System.IO.Pipes;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Win32.SafeHandles;
 using UnityEngine;
-
 using Debug = UnityEngine.Debug;
 
-
 public class Main : MonoBehaviour
-{
+{ 
 #if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX
-	const string path = "/dev/shm/test.sock";
-	const string mmap_path = "/dev/shm/test";
+	const string path = "/dev/shm/testsocket";
+	const string mmap_path = "/dev/shm/test.tmp";
 #elif UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-	const string path = "\\\\.\\test.sock";
-	const string mmap_path = Path.GetTempPath() + "test";
+	const string path = "testsocket";
+	readonly string mmap_path = Path.GetTempPath() + "test.tmp";
 #endif
 
+	Texture2D texture; // Render Target. Contains Blender render.
 
-	// Render Target. Contains Blender render.
-	Texture2D texture;
+	public UnityEngine.UI.RawImage target; // Render Target. Blender result is mapped onto this.
+	
+	System.Diagnostics.Process process; // Blender Process
 
-	// Render Target. Blender result is mapped onto this.
-	public UnityEngine.UI.RawImage target;
-
-	// Blender Process
-	System.Diagnostics.Process process;
-	// Blender Function calls return results via this stream.
-	BinaryReader output_stream;
-
-	// Pointer to the shared memory location where blender puts the render image
-	IntPtr mmap_pointer;
+	BinaryReader output_stream; // Blender Function-calls return results via this stream.
 
 	// List of Promises to blender function call results. They get removed as soon as they are resolved.
 	Queue<Promise<byte[]>> promises = new Queue<Promise<byte[]>>();
+	
+	Promise<byte[]> next_frame_promise; // Await for the next blender frame to finish rendering
 
-	// Await for the next blender frame to finish rendering
-	Promise<byte[]> next_frame_promise;
+	bool initialized = false; // True once all IPC is properly setup and Blender is ready to go.
+	bool updating = false; // Semaphore for our async Update() function (presumably Unity's fps is significantly faster than the GPU->CPU + UPBGE->Unity bridge).
 
-	// True once all IPC is properly setup and Blender is ready to go.
-	bool initialized = false;
-	bool updating = false;
+	int last_frame_time = 0; // Timestamp in ms of last image update. Used to measure UPBGE-Bridge fps.
 
-	int last_frame_time = 0;
+	MemoryMappedFile mmf = null; // This Memory Mapped File contains the image and is essentially set from Blender-Internal directly.
+	FileStream mm_fs = null; // memory mapped file stream. Needs to be closed on exit.
+	IntPtr mmap_pointer; // Pointer to the shared memory location where blender puts the render image
+
 
 	// Start is called before the first frame update
 	void Start()
 	{
+
+		// Windows is very finicky about shared contexts. Which is why we need to create it from c# with fileShare.ReadWrite, or it'll refuse to share the mmap. And it won't tell you why. So be careful when modifying this part.
+		mm_fs = File.Open(mmap_path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
+		var info = new byte[1920*1080*4];
+		mm_fs.Write(info,0,1920*1080*4);
+		#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+			mmf = MemoryMappedFile.CreateFromFile(mm_fs,"testmmap", 0, MemoryMappedFileAccess.ReadWrite, HandleInheritability.Inheritable,false );
+		#endif
+		
 		texture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false, false);
 		target.texture = texture;
 
-
-		//print("Started " + new Comm(3).Stream);
-
 		InitializeUPBGE();
-
-		// using (NamedPipeServerStream server = new NamedPipeServerStream(path,PipeDirection.Out,1,PipeTransmissionMode.Byte))
-		// {
-		//     Debug.Log("Waiting for Connection");
-		//     server.WaitForConnection();
-		//     Debug.Log("Connection Established");
-
-		//     int cnt = 0;
-
-		// 	//string line = Console.ReadLine();
-		//         byte[] messageBytes = System.Text.Encoding.UTF8.GetBytes((++cnt).ToString() + ": " + "line");
-		//         server.Write(messageBytes, 0, messageBytes.Length);
-		// 	Debug.Log("Wrote line");
-		// 	// int i = 2;
-		//     // while (i>1)
-		//     // {
-		// 	// 	i--;
-
-		//     // }
-		// }
 	}
 
+	// Start UPBGE process, redirect console and error messages, setup mmap and ipc.
 	async void InitializeUPBGE()
 	{
-		Debug.Log(Path.GetTempPath());
 		#if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX
 			var fileName = Application.dataPath + "/../../upbge-master/build_linux/bin/blenderplayer";
 		#elif UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
 			var fileName = Application.dataPath + "/../../upbge-master/build_windows_x64_vc16_Release/bin/Release/blenderplayer.exe";
 		#endif
 		
+
+		// Initialize UPBGE process:
 		var arguments = Application.dataPath + "/../../main.blend";
 		var process = this.process = new System.Diagnostics.Process();
+		process.EnableRaisingEvents = true;
+		process.StartInfo.CreateNoWindow = true;
 		process.StartInfo.FileName = fileName;
 		process.StartInfo.Arguments = arguments;
 
+		// Forward Python output and errors to Unity's console
 		process.StartInfo.UseShellExecute = false;
 		process.StartInfo.RedirectStandardOutput = true; // BUG : Stutters after a while. This is not caused by the Unity Console
 		process.StartInfo.RedirectStandardInput = true;
 		process.StartInfo.RedirectStandardError = true;
-		process.OutputDataReceived += (sender, args) => Debug.Log("received output: " + args.Data);
-		process.ErrorDataReceived += (sender, args) => Debug.Log("received error: " + args.Data);
+		process.OutputDataReceived += (sender, args) => Debug.Log("P|" + args.Data);
+		process.ErrorDataReceived += (sender, args) => Debug.LogError("P|" + args.Data);
 		process.Start();
 		process.BeginOutputReadLine();
 
-
+		// Wait to make sure the socketets are working at least.
 		await Task.Delay(1000);
+
+		send_message("set_environment", new[] { "cs" });
+
+		// Setup ipc receive Thread
 		ReadOutputs();
 
-		await send_message("set_environment", new[] { "cs" });
 		await send_message("set_resolution", new[] { "1920", "1080" });
 		next_frame_promise = send_message("next_frame", new string[0]);
+
 		InitializeMMap();
 		UpdateImage();
 
 		initialized = true;
-
 	}
 
-
+	// Called each Unity Frame. A Unity Frame does not necessarily equate an UPBGE frame, though UPBGE's framerate is limited by Unity's.
 	async void Update()
 	{
-		if(!initialized || updating)
+		if(!initialized || updating) // Skip this frame. UPBGE is busy or not yet initialized.
+		{
 			return;
-		updating = true;
-		var fetch_image_promise = send_message("fetch_image", new string[0]); 
+		}
+		updating = true; // Semaphore.
+
+		var fetch_image_promise = send_message("fetch_image", new string[0]);
 		await next_frame_promise;
 		await fetch_image_promise;
 		UpdateImage();
 		next_frame_promise = send_message("next_frame", new string[0]);
-		updating = false;
 		Debug.Log("Took " + (DateTime.Now.Millisecond - last_frame_time));
 		last_frame_time = DateTime.Now.Millisecond;
+
+		updating = false;
 	}
 
+	// Cleanup persistent resources and close UPBGE child process.
 	void OnApplicationQuit()
 	{
 		process.Kill();
+		this.mm_fs.Dispose();
+		this.mmf.Dispose();
 	}
 
+	// Call a method in python's api.py
 	Promise<byte[]> send_message(string method_name, string[] args)
 	{
 		var result = new Promise<byte[]>();
@@ -151,21 +142,26 @@ public class Main : MonoBehaviour
 		return result;
 	}
 
-
-
+	// Initialize the Mapped Memory File that stores UPBGE's image data. Unity will handle this image data as a Pointer, which can be passed directly to Unity's C-Internals.
 	unsafe void InitializeMMap()
 	{
-		using (var mmf = MemoryMappedFile.CreateFromFile(mmap_path, FileMode.Open, mmap_path))
+		Debug.Log(mmap_path);
+		
+		#if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX
+			// On Linux, Python creates the file, and cs uses it. On Windows, it's the other way around, which is why the file is created in Start()
+			this.mmf = MemoryMappedFile.CreateFromFile(mmap_path, FileMode.Open, mmap_path);
+		#endif
+		
+		using (var accessor = mmf.CreateViewAccessor())
 		{
-			using (var accessor = mmf.CreateViewAccessor())
-			{
-				byte* pointer = null;
-				accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref pointer);
-				mmap_pointer = new IntPtr(pointer);			
-			}
+			byte* pointer = null;
+			accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref pointer);
+			mmap_pointer = new IntPtr(pointer);			
 		}
+	
 	}
 
+	// Take MMap data containing UPBGE's render and upload it into our texture. This needs to happen in the main thread.
 	void UpdateImage()
 	{
 		var watch = new Stopwatch();
@@ -177,24 +173,25 @@ public class Main : MonoBehaviour
 		Debug.Log("Done " + watch.ElapsedMilliseconds);
 	}
 
+	// Receive results of python function calls. This happens in a separate thread, so we can block while waiting for streams to finish.
 	void ReadOutputs()
 	{
-		Debug.Log("Path is  " + path);
-
-
-		// Read and display lines from the file until the end of
-		// the file is reached.
 		new Thread(() =>
 		{
 			Thread.CurrentThread.IsBackground = true;
 
-			Debug.Log("Started Thread");
-			var file = new FileInfo(path).OpenRead();
+#if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX
+			var file = new FileInfo(path).OpenRead(); // Linux uses a FIFO, which is more efficient than Windows' Named Pipe, but not available on Windows.
+#elif UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+			NamedPipeServerStream file = new NamedPipeServerStream(path,PipeDirection.In,1,PipeTransmissionMode.Byte);
+			
+			Console.WriteLine("Waiting for Connection");
+			file.WaitForConnection();
+			Debug.Log("Connection Established");
+#endif
 			output_stream = new BinaryReader(file);
 			while (true)
 			{
-				
-
 				var length = output_stream.ReadInt32(); // Blocks until the next 4 bytes come in. These describe the length of the next message.
 				byte[] data = output_stream.ReadBytes(length); // read the message
 				
@@ -202,12 +199,11 @@ public class Main : MonoBehaviour
 				promise.resolve(data); // return the data as the result of the promise, which was registered when the function call was initiated in c#.
 			}
 		}).Start();
-
 	}
-
 }
 
 
+// Analogous to JS. Await a promise to block a thread. Resolve a promise to unblock the waiting threads. Awaiting resolved Promises continues asap.
 public class Promise<T> : System.Object
 {
 	public TaskCompletionSource<T> result = new TaskCompletionSource<T>();
