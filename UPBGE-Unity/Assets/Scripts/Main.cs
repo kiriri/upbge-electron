@@ -41,6 +41,13 @@ public class Main : MonoBehaviour
 	FileStream mm_fs = null; // memory mapped file stream. Needs to be closed on exit.
 	IntPtr mmap_pointer; // Pointer to the shared memory location where blender puts the render image
 
+	public int initialWidth = 1920;
+	public int initialHeight = 1080;
+
+	int height = -1;
+	int width = -1;
+
+	int mmapSize = 0; // in pixels. Mmap may be larger than height*width, but never smaller
 
 	// Start is called before the first frame update
 	void Start()
@@ -48,17 +55,15 @@ public class Main : MonoBehaviour
 
 		// Windows is very finicky about shared contexts. Which is why we need to create it from c# with fileShare.ReadWrite, or it'll refuse to share the mmap. And it won't tell you why. So be careful when modifying this part.
 		mm_fs = File.Open(mmap_path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
-		var info = new byte[1920*1080*4];
-		mm_fs.Write(info,0,1920*1080*4);
-		#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-			mmf = MemoryMappedFile.CreateFromFile(mm_fs,"testmmap", 0, MemoryMappedFileAccess.ReadWrite, HandleInheritability.Inheritable,false );
-		#endif
+		var info = new byte[initialWidth*initialHeight*4];
+		mm_fs.Write(info,0,initialWidth*initialHeight*4);
 		
-		texture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false, false);
-		target.texture = texture;
+		//UpdateResolution(1920,1080);
 
 		InitializeUPBGE();
 	}
+
+
 
 	// Start UPBGE process, redirect console and error messages, setup mmap and ipc.
 	async void InitializeUPBGE()
@@ -96,11 +101,12 @@ public class Main : MonoBehaviour
 		// Setup ipc receive Thread
 		ReadOutputs();
 
-		byte[] result = await send_message("set_resolution", new[] { "1920", "1080" });
-		
+		byte[] result = await send_message("set_resolution", new[] { initialWidth.ToString(), initialHeight.ToString() });
+		var newWidth = BitConverter.ToUInt16(result,0);
+		var newHeight = BitConverter.ToUInt16(result,2);
+		UpdateResolution(newWidth,newHeight);
 		next_frame_promise = send_message("next_frame", new string[0]);
 
-		InitializeMMap();
 		UpdateImage();
 
 		initialized = true;
@@ -143,6 +149,39 @@ public class Main : MonoBehaviour
 		return result;
 	}
 
+	// Set the resolution of both the Texture used by Unity, as well as the variables used to delimit internal buffers etc.
+	void UpdateResolution(int newWidth, int newHeight)
+	{
+		if(newWidth == width && newHeight == height)
+			return;
+
+		width = newWidth;
+		height = newHeight;
+
+		texture = new Texture2D(width, height, TextureFormat.RGBA32, false, false);
+		target.texture = texture;
+
+		target.rectTransform.sizeDelta = new Vector2(width,height);
+
+		// Update mmap
+		if(mmapSize < width * height)
+		{
+			mmapSize = width * height;
+			
+			// Python will have expanded the file at this point. We just need to reload it.
+			#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+				if(this.mmf != null)
+				{
+					mmf.Dispose();
+				}
+				mmf = MemoryMappedFile.CreateFromFile(mm_fs,"testmmap", 0, MemoryMappedFileAccess.ReadWrite, HandleInheritability.Inheritable,false );
+			#endif
+
+			InitializeMMap();
+
+		}
+	}
+
 	// Initialize the Mapped Memory File that stores UPBGE's image data. Unity will handle this image data as a Pointer, which can be passed directly to Unity's C-Internals.
 	unsafe void InitializeMMap()
 	{
@@ -150,6 +189,11 @@ public class Main : MonoBehaviour
 		
 		#if UNITY_STANDALONE_LINUX || UNITY_EDITOR_LINUX
 			// On Linux, Python creates the file, and cs uses it. On Windows, it's the other way around, which is why the file is created in Start()
+			if(this.mmf != null)
+			{
+				this.mmf.Dispose();
+			}
+
 			this.mmf = MemoryMappedFile.CreateFromFile(mmap_path, FileMode.Open, mmap_path);
 		#endif
 		
@@ -168,7 +212,7 @@ public class Main : MonoBehaviour
 		var watch = new Stopwatch();
 		watch.Start();
 
-		this.texture.LoadRawTextureData(mmap_pointer, 1920 * 1080 * 4);
+		this.texture.LoadRawTextureData(mmap_pointer, width*height * 4);
 		texture.Apply();
 		
 		Debug.Log("Done " + watch.ElapsedMilliseconds);
