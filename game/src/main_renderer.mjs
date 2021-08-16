@@ -104,7 +104,7 @@ function on_data (chunk)
 	{
 		_buffer_i = 0; // start from the start again, just in case a large message comes in ( guarantees messages up to bufferlength/2 )
 	}
-	// Worst case : chunk doesn't fit, because message was longer than have the buffer. Double buffer size and copy old buffer into new one.
+	// Worst case : chunk doesn't fit, because message was longer than the buffer. Double buffer size and copy old buffer into new one.
 	if(_buffer_i + chunk.length >= shared_buffer_view.length)
 	{
 		max_result_length *= 2;

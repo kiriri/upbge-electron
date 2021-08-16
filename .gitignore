@@ -11,6 +11,7 @@ game/node_modules/*
 
 UPBGE-Unity/*
 !UPBGE-Unity/Assets
+!UPBGE-Unity/ProjectSettings
 *.meta
 
 

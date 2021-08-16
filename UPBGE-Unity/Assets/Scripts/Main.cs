@@ -96,7 +96,8 @@ public class Main : MonoBehaviour
 		// Setup ipc receive Thread
 		ReadOutputs();
 
-		await send_message("set_resolution", new[] { "1920", "1080" });
+		byte[] result = await send_message("set_resolution", new[] { "1920", "1080" });
+		
 		next_frame_promise = send_message("next_frame", new string[0]);
 
 		InitializeMMap();
