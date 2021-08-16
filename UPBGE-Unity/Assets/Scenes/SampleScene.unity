@@ -459,3 +459,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   target: {fileID: 1128810637}
+  initialWidth: 1024
+  initialHeight: 1024
