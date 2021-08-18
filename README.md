@@ -1,15 +1,16 @@
 
 # upbge-electron
 
-`Forward UPBGE renders to Electron and control Blender from Electron (js)`
+`Forward UPBGE renders to Electron or Unity and control Blender from Electron (js) or Unity (c#)`
 
 ![Electron UPBGE Demo](.github/upbge-electron-demo.gif?raw=true "UPBGE in Electron Window")
 
 Only works on Windows and X11  
 
-Requires an up-to-date version of Node.js and npm.
+Requires an up-to-date version of Node.js and npm for the electron version.
+The Unity version requires .NET 4.x and the unsafe flag.
 
-## How it works
+## How it works (Electron)
 
 First, Electron is started. This creates the Browser Window that the final render is displayed in.
 Then the Electron process (see main_renderer.mjs) opens blenderplayer as a child-process. 
@@ -24,9 +25,18 @@ This is where Memory Mapped Files come in. These are normal files on the hard-dr
 
 This is how we can reach 60 fps. For a simple HD blender scene, Eevie renders take ~4ms, GPU->CPU fetching the pixels takes about ~8ms on PCIe 3 (about 1ms per mb). Using Asynchronicity, we can render the next frame while rendering the old one to the Electron canvas to reach 60+ fps. 
 
+## How it works (Unity)
+
+.NET does not support any pipes other than stdin, stdout and stderr. The ipc pipe used by Electron is therefore replaced with a FIFO on Linux and a Named Pipe on Windows. The FIFO is faster, but does not exist on Windows.
+
+Otherwise the Unity version works the same way the Electron one does.
+
 ## How to use
 
-Download a release package for ease of use. Then just enter the "game" folder and run "npm start".
+Download a release package for ease of use. Then just enter the "game" folder and run "npm start" to run the Electron version.
+To run the Unity version, just open the Unity folder in the Unity Editor, open the example scene, and play.
+
+There's currently no automated game build pipeline, you'll have to copy upbge to your final build's resource folder and potentially edit the paths in-script.
 
 ## How to build
 
@@ -45,5 +55,3 @@ I'm open to suggestions.
 ## Planned features
 
 - Run blender (as opposed to blenderplayer) headerlessly and provide an API for asynchronous tasks, especially still and animation renders.
-
-- Create a C# implementation for use in Unity3D
