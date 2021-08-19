@@ -54,4 +54,5 @@ I'm open to suggestions.
 
 ## Planned features
 
+- Run several instances at once
 - Run blender (as opposed to blenderplayer) headerlessly and provide an API for asynchronous tasks, especially still and animation renders.
